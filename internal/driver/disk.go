@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2020   f41gh7
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package driver
 
 import (
@@ -146,12 +162,10 @@ func (c *CsiDriver) ControllerPublishVolume(_ context.Context, req *csi.Controll
 	})
 	l.Info("controller publish volume called")
 
-	//TODO for resize add this option
-	//if ok := d.resizeLocks.VolIdExists(req.VolumeId); ok {
-	//	return nil, status.Errorf(codes.Internal, "Resize required, not publishing")
-	//}
+	if ok := c.lock.IsLocked(req.VolumeId); ok {
+		return nil, status.Errorf(codes.Internal, "Resize required for volume, not publishing")
+	}
 
-	//no we need to know is disk attached somewhere or not
 	//this api must return attachement for volume
 	//so we can add it to context
 	diskAttach, err := c.vcl.AttachDisk(req.NodeId, req.VolumeId)
@@ -178,7 +192,7 @@ func (c *CsiDriver) ControllerPublishVolume(_ context.Context, req *csi.Controll
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
 			//for being able to guess which drive to mount, we need
-			//capacity and unit number.
+			//capacity and unit number. capacity isnt reliable remove it
 			pubContextDiskSize: diskAttach.Size,
 			pubContextUnit:     diskAttach.Path,
 		},
@@ -310,8 +324,79 @@ func (c *CsiDriver) ListSnapshots(context.Context, *csi.ListSnapshotsRequest) (*
 }
 
 //TODO fix it
-func (c *CsiDriver) ControllerExpandVolume(context.Context, *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	return nil, errors.New("not implemeneted")
+func (c *CsiDriver) ControllerExpandVolume(_ context.Context,req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	l := c.l.WithFields(logrus.Fields{
+		"volume_id": req.VolumeId,
+		"range_req": req.CapacityRange.RequiredBytes,
+	})
+
+	l.Info("controller expand volume called")
+
+	volID := req.GetVolumeId()
+
+	if len(volID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID missing in request")
+	}
+
+	var currentDiskCap int64
+	var vdcName string
+	volumes, err := c.vcl.ListVolumes()
+	if err != nil {
+		l.WithError(err).Error("cannot list volumes")
+		return nil,err
+	}
+	for _, volume := range volumes{
+		if volume.Name == req.VolumeId{
+			currentDiskCap = volume.Cap
+			vdcName = volume.VdcName
+		}
+	}
+
+
+	resizeBytes, err := extractStorage(req.GetCapacityRange())
+	if err != nil {
+		return nil, status.Errorf(codes.OutOfRange, "ControllerExpandVolume invalid capacity range: %v", err)
+	}
+	l.Infof("volume will be update to: %v bytes",resizeBytes)
+
+
+	if resizeBytes <= currentDiskCap {
+		l.WithFields(logrus.Fields{
+			"current_volume_size":   currentDiskCap,
+			"requested_volume_size": resizeBytes,
+		}).Info("skipping volume resize because current volume size exceeds requested volume size")
+		// even if the volume is resized independently from the control panel, we still need to resize the node fs when resize is requested
+		// in this case, the claim capacity will be resized to the volume capacity, requested capcity will be ignored to make the PV and PVC capacities consistent
+		return &csi.ControllerExpandVolumeResponse{CapacityBytes: currentDiskCap, NodeExpansionRequired: true}, nil
+	}
+
+	l.Infof("resizing disk")
+	err = c.vcl.ResizeDisk(vdcName, req.VolumeId, resizeBytes)
+	if err != nil {
+		if errors.Is(err,vcd_client.ErrDiskAttachedToVm) {
+			l.Errorf("disk attached to vm, detach it with pod deletion, locked disk")
+			c.lock.Put(req.VolumeId)
+			return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s, disk is attached, locking it with mutex, you have to delete pod", req.GetVolumeId(), err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s", req.GetVolumeId(), err.Error())
+	}
+
+	c.lock.Pop(req.VolumeId)
+	l = l.WithField("new_volume_size", resizeBytes)
+	l.Info("volume was resized")
+
+	nodeExpansionRequired := true
+
+	if req.GetVolumeCapability() != nil {
+		switch req.GetVolumeCapability().GetAccessType().(type) {
+		case *csi.VolumeCapability_Block:
+			l.Info("node expansion is not required for block volumes")
+			nodeExpansionRequired = false
+		}
+	}
+
+	return &csi.ControllerExpandVolumeResponse{CapacityBytes: resizeBytes, NodeExpansionRequired: nodeExpansionRequired}, nil
+
 }
 
 // extractStorage extracts the storage size in bytes from the given capacity

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2020   f41gh7
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package vcd_client
 
 import (
@@ -6,6 +22,7 @@ import (
 	"github.com/vmware/go-vcloud-director/v2/govcd"
 	"github.com/vmware/go-vcloud-director/v2/types/v56"
 	"reflect"
+	"sync"
 	"testing"
 )
 
@@ -233,7 +250,7 @@ func TestVcdClient_AttachDisk(t *testing.T) {
 			name: "attach to test vm disk",
 			args: args{
 				vm:   "t-2",
-				disk: "tp1",
+				disk: "tp3",
 			},
 			fields: fields{
 				c: testConf,
@@ -383,6 +400,54 @@ func Test_getFreeUnitNum(t *testing.T) {
 				t.Errorf("getFreeUnitNum() got = %v, want more than 0 and less then 16", got)
 			}
 			t.Logf("got: %v", got)
+		})
+	}
+}
+
+func TestVcdClient_ResizeDisk(t *testing.T) {
+	testInit()
+	type fields struct {
+		c          *conf.ControllerConfig
+		l          *logrus.Entry
+		VdcClients map[string]*govcd.Vdc
+		mt         *sync.Mutex
+		baseClient *govcd.VCDClient
+	}
+	type args struct {
+		vdcName     string
+		diskName    string
+		newDiskSize int64
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr bool
+	}{
+		{
+			name:"resize test disk",
+			args:args{
+				vdcName:     "",
+				diskName:    "tp3",
+				newDiskSize: 17000928256,
+			},
+			fields:fields{
+				c:          testConf,
+				l:          testLog,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, err := NewVcdClient(tt.fields.c, tt.fields.l)
+			if err != nil {
+				t.Errorf("cannot setup test :%v", err)
+				return
+			}
+
+			if err := v.ResizeDisk(tt.args.vdcName, tt.args.diskName, tt.args.newDiskSize); (err != nil) != tt.wantErr {
+				t.Errorf("ResizeDisk() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }

@@ -6,6 +6,7 @@ on:
     branches:
       - master
       - dev
+      - develop
     tags: []
   pull_request:
 
@@ -52,7 +53,9 @@ jobs:
         run: echo ::set-env name=VERSION::$(echo ${GITHUB_REF:10})
 
       - name: Build
-        run: make build
+        run: |
+           echo "version: $VERSION"
+           make build
 
       - name: build docker
         uses: docker/build-push-action@v1

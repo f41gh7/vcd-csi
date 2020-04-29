@@ -3,6 +3,7 @@
 
 CSI for vCloud director, it uses independent disks for volume and attach/detach it.
 
+inspired by https://github.com/flant/yandex-csi-driver
 
 ## quick start
 
@@ -79,6 +80,7 @@ and  for csi-node
 
 ## limitations
 
+- for disk resize you must edit pvc, then delete pod from node, disk will be detached and resized
 - vm disk controllers cannot containt attached disk for units 8-15, it reserved for CSI
 - so maximum attached disk per vm is 8
 - tested at ubuntu 16 with Paravirtual SCSI only

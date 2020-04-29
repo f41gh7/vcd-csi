@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2020   f41gh7
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package vcd_client
 
 import (
@@ -26,6 +42,7 @@ var (
 	ErrDiskAlreadyExists = errors.New("disk already exists")
 	ErrDiskNotExists     = errors.New("vm not exists")
 	ErrNoFreeUnits       = errors.New("vm doest have free units for attach disk")
+	ErrDiskAttachedToVm = errors.New("disk is attached to vm, cannot resize")
 )
 
 //Warning all methods should be called with refresh auth and mutex
@@ -83,6 +100,7 @@ func (v *VcdClient) buildClients() error {
 type VolumeWithCap struct {
 	Name string
 	Cap  int64
+	VdcName string
 }
 
 type VcdService interface {
@@ -91,6 +109,7 @@ type VcdService interface {
 	DeleteDisk(diskName string) error
 	DetachDisk(vmName, diskName string) error
 	AttachDisk(vmName, diskName string) (*DiskAttachParams, error)
+	ResizeDisk(vdcName, diskName string, newDiskSize int64)  error
 }
 
 func (v *VcdClient) refreshAuth() error {
@@ -120,10 +139,10 @@ func (v *VcdClient) ListVolumes() ([]*VolumeWithCap, error) {
 		return nil, err
 	}
 	resp := make([]*VolumeWithCap, 0)
-	for vcdName, vcd := range v.VdcClients {
+	for vdcName, vcd := range v.VdcClients {
 		err := vcd.Refresh()
 		if err != nil {
-			v.l.WithError(err).Errorf("cannot refresh vcd: %v", vcdName)
+			v.l.WithError(err).Errorf("cannot refresh vcd: %v", vdcName)
 			return nil, err
 
 		}
@@ -138,11 +157,15 @@ func (v *VcdClient) ListVolumes() ([]*VolumeWithCap, error) {
 						return nil, err
 					}
 					v.l.Infof("found volume: %v, cap: %v", obj.Name, d.Disk.Size)
-					resp = append(resp, &VolumeWithCap{Name: obj.Name, Cap: d.Disk.Size})
+					resp = append(resp, &VolumeWithCap{
+						Name: obj.Name,
+						Cap: d.Disk.Size,
+						VdcName: vdcName})
 				}
 			}
 		}
 	}
+	v.l.Infof("listed volumes, count: %v",len(resp))
 	return resp, nil
 }
 
@@ -414,35 +437,66 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 			l.WithError(err).Errorf("cannot wait for disk attach completion")
 			return nil, err
 		}
-		l.Infof("refreshing vm spec, we need to know unit num")
-		err = vappVm.Refresh()
-		if err != nil {
-			l.WithError(err).Errorf("cannot refresh vm")
-			return nil, err
-		}
-		l.Infof("disk was updated, size: %v", Disk.Disk.Size)
-		for _, diskSpec := range vappVm.VM.VmSpecSection.DiskSection.DiskSettings {
-			if diskSpec.Disk == nil {
-				continue
-			}
-			if diskSpec.Disk.HREF == Disk.Disk.HREF {
-				//we have to convert disk from mb to bytes....
-				convSize := strconv.FormatInt(Disk.Disk.Size, 10)
-				l.Debugf("found disk at vm after refresh, size: %v, converted size %v", Disk.Disk.Size, convSize)
-				l.Infof("disk found after refresh")
-				return &DiskAttachParams{
+		convSize := strconv.FormatInt(Disk.Disk.Size, 10)
+		l.Infof("disk attached correctly")
+		return &DiskAttachParams{
 					Name: disk,
-					Path: strconv.Itoa(diskSpec.UnitNumber),
+					Path: strconv.Itoa(unitNum),
 					Size: convSize,
-				}, nil
-			}
-		}
-		l.Errorf("cannot get information about disk after attaching it to vm, seems like bug")
-		return nil, errors.New("cannot get disk attach info at vm")
-	}
+				}, nil}
+
+
 	l.WithError(ErrVmNotFound).Errorf("cannot find vm for disk attach its not possible")
 	return nil, ErrVmNotFound
 
+}
+
+func (v *VcdClient) ResizeDisk(vdcName, diskName string, newDiskSize int64)  error {
+	l := v.l.WithFields(logrus.Fields{
+		"disk": diskName,
+		"vdc": vdcName,
+	})
+	l.Infof("starting disk resize")
+	v.mt.Lock()
+	defer v.mt.Unlock()
+
+	err := v.refreshAuth()
+	if err != nil {
+		v.l.WithError(err).Error("cannot refresh auth")
+		return  err
+	}
+	if client,ok := v.VdcClients[vdcName];ok {
+		l.Infof("search disk for resize")
+		disk, err := getDiskByName(client, diskName, l)
+		if err != nil {
+			l.WithError(err).Error("cannot get disk")
+			return err
+		}
+		vm, err := disk.AttachedVM()
+		if err != nil {
+			l.WithError(err).Errorf("cannot get information about disk attachement for resize")
+			return err
+		}
+		if vm != nil {
+			l.WithError(ErrDiskAttachedToVm).Errorf("disk already attached to vm: %v",vm.Name)
+			return ErrDiskAttachedToVm
+		}
+		task, err := disk.Update(&types.Disk{Name:disk.Disk.Name,Size:newDiskSize})
+		if err != nil {
+			l.WithError(err).Error("cannot update disk")
+			return err
+		}
+		l.Infof("wait for task completion")
+		err = task.WaitTaskCompletion()
+		if err != nil {
+			l.WithError(err).Error("cannot wait for task completion")
+			return err
+		}
+		l.Infof("disk resized successfully")
+		return nil
+	}
+
+    return errors.New("vdc not exists")
 }
 
 //helper method

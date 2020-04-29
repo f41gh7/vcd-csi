@@ -104,3 +104,17 @@ func (mr *MockVcdServiceMockRecorder) AttachDisk(vmName, diskName interface{}) *
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachDisk", reflect.TypeOf((*MockVcdService)(nil).AttachDisk), vmName, diskName)
 }
+
+// ResizeDisk mocks base method
+func (m *MockVcdService) ResizeDisk(vdcName, diskName string, newDiskSize int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResizeDisk", vdcName, diskName, newDiskSize)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResizeDisk indicates an expected call of ResizeDisk
+func (mr *MockVcdServiceMockRecorder) ResizeDisk(vdcName, diskName, newDiskSize interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResizeDisk", reflect.TypeOf((*MockVcdService)(nil).ResizeDisk), vdcName, diskName, newDiskSize)
+}

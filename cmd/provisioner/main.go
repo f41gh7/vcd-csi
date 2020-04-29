@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2020   f41gh7
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package main
 
 import (
@@ -5,6 +21,7 @@ import (
 	"fmt"
 	"github.com/f41gh7/vcd-csi/conf"
 	"github.com/f41gh7/vcd-csi/internal/driver"
+	"github.com/f41gh7/vcd-csi/internal/locker"
 	"github.com/f41gh7/vcd-csi/internal/mount"
 	v1 "github.com/f41gh7/vcd-csi/pkg/controller/v1"
 	vcd_client "github.com/f41gh7/vcd-csi/pkg/vcd-client"
@@ -35,10 +52,16 @@ func main() {
 		l.WithError(err).Errorf("cannot create VCD client")
 		os.Exit(1)
 	}
+	l.Infof("init locker")
+	lock,err := locker.NewSimpleLock()
+	if err != nil {
+		l.WithError(err).Errorf("cannot create locker")
+		panic(err)
+	}
 
 	mounter := mount.NewMounter(l)
 	l.Infof("inited client, lets start driver init")
-	csiDriver, err := driver.NewCsiDriver(l, c, client, mounter, wg)
+	csiDriver, err := driver.NewCsiDriver(l, c, client, mounter,lock, wg)
 	if err != nil {
 		l.WithError(err).Errorf("cannot create driver")
 		os.Exit(1)

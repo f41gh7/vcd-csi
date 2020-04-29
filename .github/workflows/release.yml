@@ -12,14 +12,27 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v1
 
-      - name: Validates GO releaser config
-        uses: docker://goreleaser/goreleaser:latest
-        with:
-          args: check
+      - name: Get release version
+        id: get_version
+        run: echo ::set-env name=VERSION::$(echo ${GITHUB_REF:10})
 
-      - name: Create release on GitHub
-        uses: docker://goreleaser/goreleaser:latest
+      - name: Build
+        run: |
+            make build
+            echo "version: $$VERSION"
+
+      - name: build docker
+        uses: docker/build-push-action@v1
         with:
-          args: release
+          username: ${{secrets.REPO_USER}}
+          password: ${{secrets.REPO_KEY}}
+          registry: "quay.io"
+          tag_with_ref: true
+          dockerfile: cmd/provisioner/Dockerfile
+
+      - name: Upload the artifacts
+        uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: 'vcd-csi'

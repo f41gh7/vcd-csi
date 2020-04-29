@@ -1,0 +1,6 @@
+vendor/**/.git
+.idea
+.vscode
+vendor/*
+temp/
+deploy/

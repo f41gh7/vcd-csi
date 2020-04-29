@@ -1,0 +1,109 @@
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: csi-controller
+  namespace: kube-system
+spec:
+  serviceName: dummy
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-controller
+  template:
+    metadata:
+      labels:
+        app: csi-controller
+    spec:
+      tolerations:
+        - operator: Exists
+      serviceAccountName: csi-controller
+      containers:
+        - name: csi-provisioner
+          image: quay.io/k8scsi/csi-provisioner:v1.5.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/vcd-csi.sock"
+            - "--feature-gates=Topology=true"
+            - "--strict-topology"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-attacher
+          image: quay.io/k8scsi/csi-attacher:v2.1.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/vcd-csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-resizer
+          # https://github.com/flant/external-resizer/tree/faster-workqueue
+          image: flant/external-resizer:v0.4.0-flant.1
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/vcd-csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-controller
+          image: quay.io/f41gh7/vcd-csi:develop
+          ports:
+            - name: healthz
+              containerPort: 12302
+              protocol: TCP
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: VCSI_UNIXSOCKET
+              value: "unix://csi/vcd-csi.sock"
+            - name: VCSI_CLOUDCREDENTAILS_USER
+              valueFrom:
+                secretKeyRef:
+                  key: USER
+                  name: vcd-csi-credentials
+            - name: VCSI_CLOUDCREDENTAILS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: PASSWORD
+                  name: vcd-csi-credentials
+            - name: VCSI_CLOUDCREDENTAILS_ORG
+              valueFrom:
+                secretKeyRef:
+                  key: ORG
+                  name: vcd-csi-credentials
+            - name: VCSI_CLOUDCREDENTAILS_HREF
+              valueFrom:
+                secretKeyRef:
+                  key: HREF
+                  name: vcd-csi-credentials
+            - name: VCSI_VDCS
+              valueFrom:
+                secretKeyRef:
+                  key: VDCS
+                  name: vcd-csi-credentials
+            - name: VCSI_NODENAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8155
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: liveness-probe
+          image: quay.io/k8scsi/livenessprobe:v2.0.0
+          args:
+            - --csi-address=/csi/vcd-csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+      volumes:
+        - name: socket-dir
+          emptyDir: {}

@@ -1,0 +1,24 @@
+---
+apiVersion: storage.k8s.io/v1beta1
+kind: StorageClass
+metadata:
+  name: base-hdd
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: vcd.csi.fght.net
+parameters:
+  vcd: some-vdc
+  storageProfile: hdd
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1beta1
+kind: StorageClass
+metadata:
+  name: high-ssd
+provisioner: vcd.csi.fght.net
+parameters:
+  vcd: Base
+  storageProfile: ssd-high
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

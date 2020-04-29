@@ -1,0 +1,137 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: csi-node-vcd
+  namespace: kube-system
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: csi-node-vcd
+  template:
+    metadata:
+      labels:
+        app: csi-node-vcd
+    spec:
+      serviceAccountName: csi-node
+      hostNetwork: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "topology.vcd.csi.fght.net/vcd"
+                    operator: In
+                    values:
+                      - "some-vdc"
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: csi-node-driver-registrar
+          image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/vcd-csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/vcd.csi.fght.net/vcd-csi.sock"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/vcd.csi.fght.net-reg.sock /csi/vcd-csi.sock"]
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+        - name: csi-node
+
+          securityContext:
+            privileged: true
+          image: quay.io/f41gh7/vcd-csi:develop
+          ports:
+            - name: healthz
+              containerPort: 8155
+              protocol: TCP
+          env:
+            - name: VCSI_NODENAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: VCSI_UNIXSOCKET
+              value: "unix://csi/vcd-csi.sock"
+            - name: VCSI_CLOUDCREDENTAILS_USER
+              valueFrom:
+                secretKeyRef:
+                  key: USER
+                  name: vcd-csi-credentials
+            - name: VCSI_CLOUDCREDENTAILS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: PASSWORD
+                  name: vcd-csi-credentials
+            - name: VCSI_CLOUDCREDENTAILS_ORG
+              valueFrom:
+                secretKeyRef:
+                  key: ORG
+                  name: vcd-csi-credentials
+            - name: VCSI_CLOUDCREDENTAILS_HREF
+              valueFrom:
+                secretKeyRef:
+                  key: HREF
+                  name: vcd-csi-credentials
+            - name: VCSI_NODEVDC
+              value: some-vdc
+            - name: VCSI_VDCS
+              valueFrom:
+                secretKeyRef:
+                  key: VCDS
+                  name: vcd-csi-credentials
+          volumeMounts:
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: "Bidirectional"
+            - name: plugin-dir
+              mountPath: /csi
+            - name: device-dir
+              mountPath: /dev
+              mountPropagation: "HostToContainer"
+            - name: host-run
+              mountPath: /run
+              mountPropagation: "HostToContainer"
+        - name: liveness-probe
+          image: quay.io/k8scsi/livenessprobe:v2.0.0
+          args:
+            - --csi-address=/csi/vcd-csi.sock
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+        - name: kubelet-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/vcd.csi.fght.net/
+            type: DirectoryOrCreate
+        - name: device-dir
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: host-run
+          hostPath:
+            path: /run
+            type: Directory

@@ -30,7 +30,6 @@ stringData:
    ```bash
    kubectl apply -f deploy/rbac.yaml
    ```
- - edit settings for controller addd correct VDC name - VCSI_VDCS: some-vdc
  - create controller
  ```bash
   kubectl apply -f deploy/controller.yaml
@@ -75,19 +74,19 @@ and  for csi-node
 
 - csi controller uses env vars for config, you can find it at vars.MD
 
-- parametr for storage profile must be defirened at storage class creation
+- parameter for storage profile must be definened at storage class creation
 
 
 ## limitations
 
 - tested at ubuntu 16 with Paravirtual SCSI only
-- computer name at vcd vapp MUST match k8s node name
+- computer name at vdc vapp MUST match k8s node name
 - permissions - csi wants admin permissions at vdc
-- for multiple vdcs you have to provide it as list ```VCSI_VDCNAMES=vcd-1,vcd-2```
-  and tag node + storageclass
+- for multiple vdcs you have to provide it as list ```VCSI_VDCS=vcd-1,vcd-2``` at secret
+  and tag node + vdc name topology tag
 - zone-aware - VDC name
   so common practice to run different daemonsets
-  for each VDC place them with node affinity
+  for each VDC with node affinity
 
 ## requirements
 

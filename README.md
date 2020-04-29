@@ -1,4 +1,3 @@
-
 # vCloud director CSI controller
 
 
@@ -122,4 +121,3 @@ and  for csi-node
 make test
 
 https://github.com/kubernetes-csi/csi-test/blob/master/pkg/sanity/README.md
-

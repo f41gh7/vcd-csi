@@ -1,0 +1,64 @@
+name: Build and Test
+
+# This workflow will run on master branch and on any pull requests targeting master
+on:
+  push:
+    branches:
+      - master
+      - dev
+    tags: []
+  pull_request:
+
+jobs:
+
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.13
+
+      - name: Check out code
+        uses: actions/checkout@v1
+
+      - name: Run Unit tests.
+        run: make test
+#
+#      - name: Upload Coverage report to CodeCov
+#        uses: codecov/codecov-action@v1.0.0
+#        with:
+#          token: ${{secrets.CODECOV_TOKEN}}
+#          file: ./coverage.txt
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.13
+
+      - name: Check out code
+        uses: actions/checkout@v1
+
+
+      - name: Get release version
+        id: get_version
+        run: echo ::set-env name=VERSION::$(echo ${GITHUB_REF:10})
+
+      - name: Build
+        run: make build
+
+      - name: build docker
+        uses: docker/build-push-action@v1
+        with:
+          username: ${{secrets.REPO_USER}}
+          password: ${{secrets.REPO_KEY}}
+          registry: "quay.io"
+          tag_with_ref: true
+          dockerfile: cmd/provisioner/Dockerfile

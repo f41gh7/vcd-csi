@@ -79,6 +79,8 @@ and  for csi-node
 
 ## limitations
 
+- vm disk controllers cannot containt attached disk for units 8-15, it reserved for CSI
+- so maximum attached disk per vm is 8
 - tested at ubuntu 16 with Paravirtual SCSI only
 - computer name at vdc vapp MUST match k8s node name
 - permissions - csi wants admin permissions at vdc
@@ -91,15 +93,16 @@ and  for csi-node
 ## requirements
 
 - Docker mount propagtion = shared
-- kubernetes 14+
+- kubernetes 14+, --allow-privileged
+- feature gate ```KubeletPluginsWatcher=true,CSINodeInfo=true,CSIDriverRegistry=true```
 
 
 # known problems
 
  Its hard to link attacheted to VM disk, currently there is filter:
- - list all disks and match it by disk size
- - list matched by size disk and check unit number for PCI: bus, it must contain unit number
+ - list matched by unit number for PCI: bus, it must contain unit number
    from vm setting
+   so unit numbers from 8 to 15 reserved for all controllers.
    
  But there can be collisions, so whats the solution? use different vm for disk or change disk size..
  

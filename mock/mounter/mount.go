@@ -140,17 +140,17 @@ func (mr *MockMounterMockRecorder) IsBlockDevice(volumePath interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsBlockDevice", reflect.TypeOf((*MockMounter)(nil).IsBlockDevice), volumePath)
 }
 
-// GetDiskNameBySizeAndUnit mocks base method
-func (m *MockMounter) GetDiskNameBySizeAndUnit(size, unit, bus string) (string, error) {
+// GetDiskUnit mocks base method
+func (m *MockMounter) GetDiskUnit(size, unit, bus string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDiskNameBySizeAndUnit", size, unit, bus)
+	ret := m.ctrl.Call(m, "GetDiskUnit", size, unit, bus)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetDiskNameBySizeAndUnit indicates an expected call of GetDiskNameBySizeAndUnit
-func (mr *MockMounterMockRecorder) GetDiskNameBySizeAndUnit(size, unit, bus interface{}) *gomock.Call {
+// GetDiskUnit indicates an expected call of GetDiskUnit
+func (mr *MockMounterMockRecorder) GetDiskUnit(size, unit, bus interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDiskNameBySizeAndUnit", reflect.TypeOf((*MockMounter)(nil).GetDiskNameBySizeAndUnit), size, unit, bus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDiskUnit", reflect.TypeOf((*MockMounter)(nil).GetDiskUnit), size, unit, bus)
 }

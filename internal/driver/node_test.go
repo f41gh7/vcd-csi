@@ -69,7 +69,7 @@ func TestCsiDriver_nodePublishVolumeForBlock(t *testing.T) {
 
 			mnt := mock_mount.NewMockMounter(controller)
 			vcl := mock_vcd_client.NewMockVcdService(controller)
-			mnt.EXPECT().GetDiskNameBySizeAndUnit(tt.args.req.PublishContext[pubContextDiskSize], tt.args.req.PublishContext[pubContextUnit], "").Return("/dev/sda", nil)
+			mnt.EXPECT().GetDiskUnit(tt.args.req.PublishContext[pubContextDiskSize], tt.args.req.PublishContext[pubContextUnit], "").Return("/dev/sda", nil)
 			mnt.EXPECT().IsMounted("").Return(true, nil)
 			c := &CsiDriver{
 				l:       tt.fields.l,

@@ -51,7 +51,7 @@ func (c *CsiDriver) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeR
 	// size in bytes
 	//unit number
 
-	source, err := c.m.GetDiskNameBySizeAndUnit(diskSize, diskUnit, "")
+	source, err := c.m.GetDiskUnit(diskSize, diskUnit, "")
 	if err != nil {
 		l.WithError(err).Errorf("cannot get source ")
 		return nil, err
@@ -403,7 +403,7 @@ func (c *CsiDriver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest,
 		return status.Error(codes.InvalidArgument, "Publish context diskSizeB must be provided")
 
 	}
-	source, err := c.m.GetDiskNameBySizeAndUnit(diskSize, diskUnit, "")
+	source, err := c.m.GetDiskUnit(diskSize, diskUnit, "")
 	if err != nil {
 		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", req.VolumeId, err)
 	}

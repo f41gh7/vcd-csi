@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	maxVolumesPerNode    = 12
+	maxVolumesPerNode    = 8
 	volumeModeBlock      = "block"
 	volumeModeFilesystem = "filesystem"
 )

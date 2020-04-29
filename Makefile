@@ -1,6 +1,5 @@
  # Go parameters
 GOCMD=GO111MODULE=on go
-VERSION=$($CI_BUILD_TAG)
 BUILD=`date +%FT%T%z`
 LDFLAGS=-ldflags "-w -s  -X main.Version=${VERSION} -X main.BuildDate=${BUILD}"
 GOBUILD=CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOCMD) build -trimpath ${LDFLAGS}

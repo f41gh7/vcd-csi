@@ -379,7 +379,7 @@ func Test_getFreeUnitNum(t *testing.T) {
 				t.Errorf("getFreeUnitNum() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got > 15 || got < 0 {
+			if got > 15 || got < 8 {
 				t.Errorf("getFreeUnitNum() got = %v, want more than 0 and less then 16", got)
 			}
 			t.Logf("got: %v", got)

@@ -64,9 +64,9 @@ type Mounter interface {
 	// IsBlockDevice checks whether the device at the path is a block device
 	IsBlockDevice(volumePath string) (bool, error)
 
-	//provides information about new disk location - /dev/sda or etc
-	//
-	GetDiskNameBySizeAndUnit(size string, unit string, bus string) (string, error)
+
+	//provides information about new disk location only by unit match
+	GetDiskUnit(size string, unit string, bus string) (string, error)
 }
 
 type MounterHandler struct {
@@ -365,7 +365,7 @@ func (m *MounterHandler) IsBlockDevice(devicePath string) (bool, error) {
 //so we split by :
 // [1] - must contain bus num or some kind of, dunno how to validte it
 //[4] - contains unit number
-func (m *MounterHandler) GetDiskNameBySizeAndUnit(size string, unit string, bus string) (string, error) {
+func (m *MounterHandler) GetDiskgNameBySizeAndUnit(size string, unit string, bus string) (string, error) {
 	l := m.log.WithFields(logrus.Fields{"size": size, "unit": unit, "bus": bus})
 	parseUintSize, err := strconv.ParseUint(size, 10, 64)
 	if err != nil {
@@ -428,4 +428,44 @@ func extractUnitNumForScsi(bus string) string {
 	}
 	return splittedData[4]
 
+}
+
+//we assume, that volume size and disk unit cannot be the same (it`s very rare case
+//so we filter all disks by it`s size
+//then validate output by unit
+//for paravirtual scsi it allways at last -1 part
+//pci-0000:0b:00.0-scsi-0:0:0:0
+//pci-0000:1b:00.0-scsi-0:0:5:0
+//pci-0000:0b:00.0-scsi-0:0:11:0
+//pci-0000:0b:00.0-scsi-0:0:6:0
+//so we split by :
+// [1] - must contain bus num or some kind of, dunno how to validte it
+//[4] - contains unit number
+func (m *MounterHandler) GetDiskUnit(size string, unit string, bus string) (string, error) {
+	l := m.log.WithFields(logrus.Fields{"size": size, "unit": unit, "bus": bus})
+	block, err := ghw.Block()
+	if err != nil {
+		l.WithError(err).Errorf("cannot get information about disks at system")
+		return "", err
+	}
+	matchedDisksByUnit := make([]*ghw.Disk, 0)
+	for _, disk := range block.Disks {
+		l.Infof("disk: %v, bus: %s, type: %v, size: %v, controller: %v, path: %v, all info: %v", disk.Name, disk.BusType, disk.DriveType, disk.SizeBytes, disk.StorageController, disk.BusPath,disk.String())
+		unitNum := extractUnitNumForScsi(disk.BusPath)
+		if unitNum == unit {
+			l.Infof("disk matched by unit number")
+			matchedDisksByUnit = append(matchedDisksByUnit, disk)
+		}
+	}
+	switch len(matchedDisksByUnit) {
+	case 0:
+		//no disk found
+		return "", errors.New("cannot find disk by size")
+	case 1:
+		return "/dev/" + matchedDisksByUnit[0].Name, nil
+	default:
+		//we need additional guess
+		//TODO additional checks
+		return "", fmt.Errorf("disk not match by filter for unit number, matched result len: %v, but we want only 1 match", len(matchedDisksByUnit))
+	}
 }

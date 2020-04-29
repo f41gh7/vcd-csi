@@ -148,7 +148,7 @@ func (v *VcdClient) ListVolumes() ([]*VolumeWithCap, error) {
 
 //we must validate min size before calling this func
 func (v *VcdClient) CreateDisk(vdcName, diskName, profile string, capacityBytes int64) error {
-	l := v.l.WithField("vdcName", vdcName).WithField("diskName", diskName).WithField("profile", profile)
+	l := v.l.WithFields(logrus.Fields{"vdcName": vdcName, "diskName": diskName, "profile": profile, "size": capacityBytes})
 	l.Infof("creating new disk")
 	v.mt.Lock()
 	defer v.mt.Unlock()
@@ -227,46 +227,41 @@ func (v *VcdClient) DeleteDisk(diskName string) error {
 			return err
 		}
 
-		disks, err := client.GetDisksByName(diskName, false)
+		disk, err := getDiskByName(client, diskName, l)
 		if err != nil {
 			l.WithError(err).Errorf("cannot find disk for removal at vcd")
 			continue
 		}
-		for _, d := range *disks {
-			vmAttach, err := d.AttachedVM()
-			if err != nil {
-				l.WithError(err).Errorf("cannot check has disk vm attach or not")
-				return err
-			}
-			if vmAttach != nil {
-				l.Infof("disk is attached to vm, detaching it first vm: %v", vmAttach.Name)
-				err := v.detachDisk(client, l, diskName)
-				if err != nil {
-					l.WithError(err).Errorf("cannot detach disk")
-					return err
-				}
-				l.Infof("disk was detached from vm")
-			}
-
-			l.Infof("deleting disk")
-			task, err := d.Delete()
-			if err != nil {
-				l.WithError(err).Errorf("cannot delete disk")
-				return err
-
-			}
-			l.Infof("waiting for disk deletion")
-			err = task.WaitTaskCompletion()
-			if err != nil {
-				l.WithError(err).Errorf("cannot wait for disk delete complete")
-				return err
-			}
-			l.Infof("disk was deleted")
-			return nil
+		vmAttach, err := disk.AttachedVM()
+		if err != nil {
+			l.WithError(err).Errorf("cannot check has disk vm attach or not")
+			return err
 		}
-		l.Infof("disk was deleted  few times, seems like bug, report it, len of found disks: %v", len(*disks))
-		return nil
+		if vmAttach != nil {
+			l.Infof("disk is attached to vm, detaching it first vm: %v", vmAttach.Name)
+			err := v.detachDisk(client, l, diskName)
+			if err != nil {
+				l.WithError(err).Errorf("cannot detach disk")
+				return err
+			}
+			l.Infof("disk was detached from vm")
+		}
 
+		l.Infof("deleting disk")
+		task, err := disk.Delete()
+		if err != nil {
+			l.WithError(err).Errorf("cannot delete disk")
+			return err
+
+		}
+		l.Infof("waiting for disk deletion")
+		err = task.WaitTaskCompletion()
+		if err != nil {
+			l.WithError(err).Errorf("cannot wait for disk delete complete")
+			return err
+		}
+		l.Infof("disk was deleted")
+		return nil
 	}
 	l.Infof("seems like disk doesnt exists")
 	return nil
@@ -342,7 +337,7 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 			l.WithError(err).Errorf("cannot query vm")
 			return nil, err
 		}
-		disks, err := client.GetDisksByName(disk, false)
+		Disk, err := getDiskByName(client, disk, l)
 		if err != nil {
 			//disk not exists
 			if errors.Is(err, govcd.ErrorEntityNotFound) {
@@ -352,64 +347,52 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 			l.WithError(err).Errorf("cannot get disk by name for attaching")
 			return nil, err
 		}
-		l.Infof("len of found disks: %v", len(*disks))
-		if len(*disks) != 1 {
-			l.Errorf("disk count mismatch, it must be excatly 1, found: %v", len(*disks))
-			return nil, errors.New("disk count mismatch")
+		l.Infof("check if disk is attached to vm")
+		attachedVM, err := Disk.AttachedVM()
+		if err != nil {
+			l.WithError(err).Errorf("cannot get attaching info for disk")
+			return nil, err
 		}
-		var Disk govcd.Disk
-		var diskHref string
-		var diskSize int64
-		for _, diskInfo := range *disks {
-			Disk = diskInfo
-			diskHref = diskInfo.Disk.HREF
-			diskSize = diskInfo.Disk.Size
-			l.Infof("check if disk is attached to vm")
-			attachedVM, err := diskInfo.AttachedVM()
-			if err != nil {
-				l.WithError(err).Errorf("cannot get attaching info for disk")
-				return nil, err
-			}
-			//check if disk already attached
-			if attachedVM != nil {
-				l.WithField("vm_attach_name", attachedVM.Name)
-				l.Infof("disk already attached to vm, check if it is correct")
-				//probably it`s our vm
-				if vappVm.VM.HREF == attachedVM.HREF {
-					//disk already attached to this vm
-					l.Infof("disk already attached to correct vm")
-					for _, diskSpec := range vappVm.VM.VmSpecSection.DiskSection.DiskSettings {
-						//aat vm speck disk may be nil
-						if diskSpec.Disk == nil {
-							continue
-						}
-						if diskSpec.Disk.HREF == diskInfo.Disk.HREF {
-							//we found correct attachemtnet
-							l.Infof("found disk attached to vm")
-							return &DiskAttachParams{
-								Name: disk,
-								//we need data convertion to string for publish context
-								Path: strconv.Itoa(diskSpec.UnitNumber),
-								Size: strconv.FormatInt(diskInfo.Disk.Size, 10),
-							}, nil
-						}
+		//check if disk already attached
+		if attachedVM != nil {
+			l.WithField("vm_attach_name", attachedVM.Name)
+			l.Infof("disk already attached to vm, check if it is correct")
+			//probably it`s our vm
+			if vappVm.VM.HREF == attachedVM.HREF {
+				//disk already attached to this vm
+				l.Infof("disk already attached to correct vm")
+				for _, diskSpec := range vappVm.VM.VmSpecSection.DiskSection.DiskSettings {
+					//aat vm speck disk may be nil
+					if diskSpec.Disk == nil {
+						continue
 					}
-					//thats strange, seems like bug
-					l.Warnf("cannot find disk spec at vm setting, seems like bug")
+					if diskSpec.Disk.HREF == Disk.Disk.HREF {
+						//we found correct attachemtnet
+						convSize := strconv.FormatInt(Disk.Disk.Size, 10)
+						l.Infof("found disk attached to vm, name: %s, size: %v", diskSpec.Disk.Name, Disk.Disk.Size)
+						return &DiskAttachParams{
+							Name: disk,
+							//we need data convertion to string for publish context
+							Path: strconv.Itoa(diskSpec.UnitNumber),
+							Size: convSize,
+						}, nil
+					}
 				}
-
-				//do we really need it?
-				//it`s error prone
-				l.Infof("detaching disk from incorrect vm")
-				err := v.detachDisk(client, l, disk)
-				if err != nil {
-					l.Errorf("disk attached to wrong vm, detach it")
-					return nil, ErrWrongDiskAttach
-				}
-				l.Infof("disk was detached from vm incorrect vm")
+				//thats strange, seems like bug
+				l.Warnf("cannot find disk spec at vm setting, seems like bug")
 			}
 
+			//do we really need it?
+			//it`s error prone
+			l.Infof("detaching disk from incorrect vm")
+			err := v.detachDisk(client, l, disk)
+			if err != nil {
+				l.Errorf("disk attached to wrong vm, detach it")
+				return nil, ErrWrongDiskAttach
+			}
+			l.Infof("disk was detached from vm incorrect vm")
 		}
+
 		l = l.WithField("vm_attach_name", vm)
 
 		l.Infof("attaching disk to vm")
@@ -437,16 +420,20 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 			l.WithError(err).Errorf("cannot refresh vm")
 			return nil, err
 		}
+		l.Infof("disk was updated, size: %v", Disk.Disk.Size)
 		for _, diskSpec := range vappVm.VM.VmSpecSection.DiskSection.DiskSettings {
 			if diskSpec.Disk == nil {
 				continue
 			}
-			if diskSpec.Disk.HREF == diskHref {
-				l.Infof("found disk at vm after refresh")
+			if diskSpec.Disk.HREF == Disk.Disk.HREF {
+				//we have to convert disk from mb to bytes....
+				convSize := strconv.FormatInt(Disk.Disk.Size, 10)
+				l.Debugf("found disk at vm after refresh, size: %v, converted size %v", Disk.Disk.Size, convSize)
+				l.Infof("disk found after refresh")
 				return &DiskAttachParams{
 					Name: disk,
 					Path: strconv.Itoa(diskSpec.UnitNumber),
-					Size: strconv.FormatInt(diskSize, 10),
+					Size: convSize,
 				}, nil
 			}
 		}
@@ -461,60 +448,52 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 //helper method
 func (v *VcdClient) detachDisk(client *govcd.Vdc, l *logrus.Entry, VolumeName string) error {
 	l.Infof("search at vdc")
-	disks, err := client.GetDisksByName(VolumeName, false)
+	disk, err := getDiskByName(client, VolumeName, l)
 	if err != nil {
 		return err
 	}
-	if len(*disks) != 1 {
-		l.Errorf("disk name count mismatch - delete duplicates, found count: %v", len(*disks))
-		return errors.New("disk name collision")
+	attachedVM, err := disk.AttachedVM()
+	if err != nil {
+		l.WithError(err).Errorf("cannot get attached vm")
+		return err
 	}
-	for _, disk := range *disks {
-		attachedVM, err := disk.AttachedVM()
-		if err != nil {
-			l.WithError(err).Errorf("cannot get attached vm")
-			return err
-		}
-		if attachedVM == nil {
-			//nothing to do disk detached
-			l.Infof("disk already detached")
-			return nil
-		}
-		//it`s safe to call, we pass client to it
-		vappVm, err := v.getVMByName(client, attachedVM.Name)
-		if err != nil {
-			l.WithError(err).Errorf("cannot find vm for attached disk, its bug,  vm: %v", attachedVM.Name)
-			return err
-		}
-		for _, diskSpec := range vappVm.VM.VmSpecSection.DiskSection.DiskSettings {
-			if diskSpec.Disk == nil {
-				continue
-			}
-			if diskSpec.Disk.HREF == disk.Disk.HREF {
-				l.Infof("found matched disk, lets detach it")
-				task, err := vappVm.DetachDisk(&types.DiskAttachOrDetachParams{Disk: &types.Reference{
-					Type: diskSpec.Disk.Type,
-					Name: diskSpec.Disk.Name,
-					HREF: diskSpec.Disk.HREF},
-					BusNumber: &diskSpec.BusNumber, UnitNumber: &diskSpec.UnitNumber})
-				if err != nil {
-					l.WithError(err).Errorf("cannot deattach disk from vm")
-					return err
-				}
-				err = task.WaitTaskCompletion()
-				if err != nil {
-					l.WithError(err).Errorf("cannot wait for disk deattach completion")
-					return err
-				}
-				l.Infof("detached disk")
-				return nil
-
-			}
-		}
-		l.Warnf("cannot find disk at vm spec, is it bug?")
+	if attachedVM == nil {
+		//nothing to do disk detached
+		l.Infof("disk already detached")
 		return nil
 	}
-	l.Infof("cannot find disk for detach")
+	//it`s safe to call, we pass client to it
+	vappVm, err := v.getVMByName(client, attachedVM.Name)
+	if err != nil {
+		l.WithError(err).Errorf("cannot find vm for attached disk, its bug,  vm: %v", attachedVM.Name)
+		return err
+	}
+	for _, diskSpec := range vappVm.VM.VmSpecSection.DiskSection.DiskSettings {
+		if diskSpec.Disk == nil {
+			continue
+		}
+		if diskSpec.Disk.HREF == disk.Disk.HREF {
+			l.Infof("found matched disk, lets detach it")
+			task, err := vappVm.DetachDisk(&types.DiskAttachOrDetachParams{Disk: &types.Reference{
+				Type: diskSpec.Disk.Type,
+				Name: diskSpec.Disk.Name,
+				HREF: diskSpec.Disk.HREF},
+				BusNumber: &diskSpec.BusNumber, UnitNumber: &diskSpec.UnitNumber})
+			if err != nil {
+				l.WithError(err).Errorf("cannot deattach disk from vm")
+				return err
+			}
+			err = task.WaitTaskCompletion()
+			if err != nil {
+				l.WithError(err).Errorf("cannot wait for disk deattach completion")
+				return err
+			}
+			l.Infof("detached disk")
+			return nil
+
+		}
+	}
+	l.Warnf("cannot find disk at vm spec, is it bug?")
 	return nil
 }
 
@@ -549,10 +528,26 @@ func (v *VcdClient) getVMByName(client *govcd.Vdc, vm string) (*govcd.VM, error)
 	return nil, ErrVmNotFound
 }
 
+func getDiskByName(client *govcd.Vdc, diskName string, l *logrus.Entry) (*govcd.Disk, error) {
+
+	disks, err := client.GetDisksByName(diskName, true)
+	if err != nil {
+		l.WithError(err).Error("cannot get disk from vdc")
+		return nil, err
+	}
+	if len(*disks) != 1 {
+		return nil, errors.New("disk count mismatch, we want excatly one, seems like collision, count: " + string(len(*disks)))
+	}
+	disk := (*disks)[0]
+
+	l.Infof("disk was found, disk: %s, size: %d", disk.Disk.Name, disk.Disk.Size)
+	return &disk, nil
+}
+
 func (v *VcdClient) disksExists(client *govcd.Vdc, diskName string) (bool, error) {
 	l := v.l.WithField("disk", diskName)
 	l.Infof("checking if disk exists")
-	_, err := client.GetDisksByName(diskName, false)
+	d, err := client.GetDisksByName(diskName, false)
 	if err != nil {
 		if errors.Is(err, govcd.ErrorEntityNotFound) {
 			return false, nil
@@ -560,17 +555,19 @@ func (v *VcdClient) disksExists(client *govcd.Vdc, diskName string) (bool, error
 		l.WithError(err).Errorf("error listing disks")
 		return false, err
 	}
+	if len(*d) == 1 {
+		d1 := (*d)[0]
+		l.Infof("exists disk info, name: %s, size: %v", d1.Disk.Name, d1.Disk.Size)
+	}
 	l.Infof("disk exists")
 	return true, nil
 
 }
 
+//ok, lets reserve 8-15 units for our disks
 func buildDiskUnits() map[int]bool {
 	units := map[int]bool{}
-	for i := 0; i < 16; i++ {
-		if i == 7 {
-			continue
-		}
+	for i := 8; i < 16; i++ {
 		units[i] = false
 	}
 	return units

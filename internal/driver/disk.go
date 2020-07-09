@@ -49,7 +49,7 @@ const (
 	defaultVolumeSizeInBytes int64 = 5 * giB
 	vcdParam                       = "vcd"
 	storageProfileParam            = "storageProfile"
-	topologyKey                    = "topology.vcd.csi.fght.net/vcd"
+	topologyKey                    = "failure-domain.beta.kubernetes.io/zone"
 
 	pubContextUnit     = "diskUnitNum"
 	pubContextDiskSize = "diskSizeB"

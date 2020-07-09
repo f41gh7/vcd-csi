@@ -61,6 +61,7 @@ func main() {
 
 	mounter := mount.NewMounter(l)
 	l.Infof("inited client, lets start driver init")
+
 	csiDriver, err := driver.NewCsiDriver(l, c, client, mounter,lock, wg)
 	if err != nil {
 		l.WithError(err).Errorf("cannot create driver")

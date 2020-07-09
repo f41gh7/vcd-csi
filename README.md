@@ -10,7 +10,7 @@ inspired by https://github.com/flant/yandex-csi-driver
  - ensure that kubectl get nodes and vm name at VDC is the same
  - label node for each vdc
  ```bash 
-kubectl label node nod1  topology.kubernetes.io/vcd=some-vdc
+kubectl label node nod1  failure-domain.beta.kubernetes.io/zone=some-vdc
 ```
  - create secret for access cloud - you can find example at deploy/secret.yaml
 ```yaml
@@ -58,7 +58,7 @@ volumeBindingMode: WaitForFirstConsumer
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
-                  - key: "topology.kubernetes.io/vcd"
+                  - key: "topology.kubernetes.io/zone"
                     operator: In
                     values:
                       - "some-vdc"

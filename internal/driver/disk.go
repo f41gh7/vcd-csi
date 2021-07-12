@@ -20,14 +20,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/f41gh7/vcd-csi/pkg/types"
 	vcd_client "github.com/f41gh7/vcd-csi/pkg/vcd-client"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"strconv"
-	"strings"
 )
 
 const (
@@ -93,7 +95,7 @@ func (c *CsiDriver) CreateVolume(_ context.Context, req *csi.CreateVolumeRequest
 	}
 
 	resp := &csi.CreateVolumeResponse{Volume: &csi.Volume{
-		CapacityBytes: size,
+		CapacityBytes: size.Bytes(),
 		VolumeId:      req.Name,
 		AccessibleTopology: []*csi.Topology{
 			{
@@ -193,7 +195,6 @@ func (c *CsiDriver) ControllerPublishVolume(_ context.Context, req *csi.Controll
 		PublishContext: map[string]string{
 			//for being able to guess which drive to mount, we need
 			//capacity and unit number. capacity isnt reliable remove it
-			pubContextDiskSize: diskAttach.Size,
 			pubContextUnit:     diskAttach.Path,
 		},
 	}, nil
@@ -264,7 +265,7 @@ func (c *CsiDriver) ListVolumes(context.Context, *csi.ListVolumesRequest) (*csi.
 	for _, volume := range volumes {
 		ent := &csi.ListVolumesResponse_Entry{Volume: &csi.Volume{
 			VolumeId:      volume.Name,
-			CapacityBytes: volume.Cap,
+			CapacityBytes: volume.Cap.Bytes(),
 		}}
 		resp.Entries = append(resp.Entries, ent)
 	}
@@ -338,7 +339,7 @@ func (c *CsiDriver) ControllerExpandVolume(_ context.Context,req *csi.Controller
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID missing in request")
 	}
 
-	var currentDiskCap int64
+	var currentDiskCap *types.StorageSize
 	var vdcName string
 	volumes, err := c.vcl.ListVolumes()
 	if err != nil {
@@ -360,14 +361,14 @@ func (c *CsiDriver) ControllerExpandVolume(_ context.Context,req *csi.Controller
 	l.Infof("volume will be update to: %v bytes",resizeBytes)
 
 
-	if resizeBytes <= currentDiskCap {
+	if resizeBytes.Bytes() <= currentDiskCap.Bytes() {
 		l.WithFields(logrus.Fields{
 			"current_volume_size":   currentDiskCap,
 			"requested_volume_size": resizeBytes,
 		}).Info("skipping volume resize because current volume size exceeds requested volume size")
 		// even if the volume is resized independently from the control panel, we still need to resize the node fs when resize is requested
 		// in this case, the claim capacity will be resized to the volume capacity, requested capcity will be ignored to make the PV and PVC capacities consistent
-		return &csi.ControllerExpandVolumeResponse{CapacityBytes: currentDiskCap, NodeExpansionRequired: true}, nil
+		return &csi.ControllerExpandVolumeResponse{CapacityBytes: currentDiskCap.Bytes(), NodeExpansionRequired: true}, nil
 	}
 
 	l.Infof("resizing disk")
@@ -395,17 +396,19 @@ func (c *CsiDriver) ControllerExpandVolume(_ context.Context,req *csi.Controller
 		}
 	}
 
-	return &csi.ControllerExpandVolumeResponse{CapacityBytes: resizeBytes, NodeExpansionRequired: nodeExpansionRequired}, nil
+	return &csi.ControllerExpandVolumeResponse{CapacityBytes: resizeBytes.Bytes(), NodeExpansionRequired: nodeExpansionRequired}, nil
 
 }
+
+
 
 // extractStorage extracts the storage size in bytes from the given capacity
 // range. If the capacity range is not satisfied it returns the default volume
 // size. If the capacity range is below or above supported sizes, it returns an
 // error.
-func extractStorage(capRange *csi.CapacityRange) (int64, error) {
+func extractStorage(capRange *csi.CapacityRange) (* types.StorageSize, error) {
 	if capRange == nil {
-		return defaultVolumeSizeInBytes, nil
+		return  types.NewStorageSize(defaultVolumeSizeInBytes), nil
 	}
 
 	requiredBytes := capRange.GetRequiredBytes()
@@ -414,42 +417,42 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	limitSet := 0 < limitBytes
 
 	if !requiredSet && !limitSet {
-		return defaultVolumeSizeInBytes, nil
+		return types.NewStorageSize(defaultVolumeSizeInBytes), nil
 	}
 
 	if requiredSet && limitSet && limitBytes < requiredBytes {
-		return 0, fmt.Errorf("limit (%v) can not be less than required (%v) size", formatBytes(limitBytes), formatBytes(requiredBytes))
+		return nil, fmt.Errorf("limit (%v) can not be less than required (%v) size", formatBytes(limitBytes), formatBytes(requiredBytes))
 	}
 
 	if requiredSet && !limitSet && requiredBytes < minimumVolumeSizeInBytes {
-		return 0, fmt.Errorf("required (%v) can not be less than minimum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(minimumVolumeSizeInBytes))
+		return nil, fmt.Errorf("required (%v) can not be less than minimum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(minimumVolumeSizeInBytes))
 	}
 
 	if limitSet && limitBytes < minimumVolumeSizeInBytes {
-		return 0, fmt.Errorf("limit (%v) can not be less than minimum supported volume size (%v)", formatBytes(limitBytes), formatBytes(minimumVolumeSizeInBytes))
+		return nil, fmt.Errorf("limit (%v) can not be less than minimum supported volume size (%v)", formatBytes(limitBytes), formatBytes(minimumVolumeSizeInBytes))
 	}
 
 	if requiredSet && requiredBytes > maximumVolumeSizeInBytes {
-		return 0, fmt.Errorf("required (%v) can not exceed maximum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(maximumVolumeSizeInBytes))
+		return nil, fmt.Errorf("required (%v) can not exceed maximum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(maximumVolumeSizeInBytes))
 	}
 
 	if !requiredSet && limitSet && limitBytes > maximumVolumeSizeInBytes {
-		return 0, fmt.Errorf("limit (%v) can not exceed maximum supported volume size (%v)", formatBytes(limitBytes), formatBytes(maximumVolumeSizeInBytes))
+		return nil, fmt.Errorf("limit (%v) can not exceed maximum supported volume size (%v)", formatBytes(limitBytes), formatBytes(maximumVolumeSizeInBytes))
 	}
 
 	if requiredSet && limitSet && requiredBytes == limitBytes {
-		return requiredBytes, nil
+		return types.NewStorageSize(requiredBytes), nil
 	}
 
 	if requiredSet {
-		return requiredBytes, nil
+		return types. NewStorageSize(requiredBytes), nil
 	}
 
 	if limitSet {
-		return limitBytes, nil
+		return types.NewStorageSize(limitBytes), nil
 	}
 
-	return defaultVolumeSizeInBytes, nil
+	return types.NewStorageSize(defaultVolumeSizeInBytes), nil
 }
 
 func formatBytes(inputBytes int64) string {

@@ -5,6 +5,7 @@
 package mock_vcd_client
 
 import (
+	types "github.com/f41gh7/vcd-csi/pkg/types"
 	vcd_client "github.com/f41gh7/vcd-csi/pkg/vcd-client"
 	gomock "github.com/golang/mock/gomock"
 	reflect "reflect"
@@ -34,17 +35,17 @@ func (m *MockVcdService) EXPECT() *MockVcdServiceMockRecorder {
 }
 
 // CreateDisk mocks base method
-func (m *MockVcdService) CreateDisk(vdc, diskName, profile string, capacityBytes int64) error {
+func (m *MockVcdService) CreateDisk(vdc, diskName, profile string, storageSize *types.StorageSize) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateDisk", vdc, diskName, profile, capacityBytes)
+	ret := m.ctrl.Call(m, "CreateDisk", vdc, diskName, profile, storageSize)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateDisk indicates an expected call of CreateDisk
-func (mr *MockVcdServiceMockRecorder) CreateDisk(vdc, diskName, profile, capacityBytes interface{}) *gomock.Call {
+func (mr *MockVcdServiceMockRecorder) CreateDisk(vdc, diskName, profile, storageSize interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDisk", reflect.TypeOf((*MockVcdService)(nil).CreateDisk), vdc, diskName, profile, capacityBytes)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDisk", reflect.TypeOf((*MockVcdService)(nil).CreateDisk), vdc, diskName, profile, storageSize)
 }
 
 // ListVolumes mocks base method
@@ -106,15 +107,15 @@ func (mr *MockVcdServiceMockRecorder) AttachDisk(vmName, diskName interface{}) *
 }
 
 // ResizeDisk mocks base method
-func (m *MockVcdService) ResizeDisk(vdcName, diskName string, newDiskSize int64) error {
+func (m *MockVcdService) ResizeDisk(vdcName, diskName string, storageSize *types.StorageSize) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResizeDisk", vdcName, diskName, newDiskSize)
+	ret := m.ctrl.Call(m, "ResizeDisk", vdcName, diskName, storageSize)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ResizeDisk indicates an expected call of ResizeDisk
-func (mr *MockVcdServiceMockRecorder) ResizeDisk(vdcName, diskName, newDiskSize interface{}) *gomock.Call {
+func (mr *MockVcdServiceMockRecorder) ResizeDisk(vdcName, diskName, storageSize interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResizeDisk", reflect.TypeOf((*MockVcdService)(nil).ResizeDisk), vdcName, diskName, newDiskSize)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResizeDisk", reflect.TypeOf((*MockVcdService)(nil).ResizeDisk), vdcName, diskName, storageSize)
 }

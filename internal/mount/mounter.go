@@ -20,13 +20,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jaypipes/ghw"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/jaypipes/ghw"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"

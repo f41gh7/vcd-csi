@@ -19,13 +19,15 @@ package vcd_client
 import (
 	"errors"
 	"fmt"
-	"github.com/f41gh7/vcd-csi/conf"
-	"github.com/sirupsen/logrus"
-	"github.com/vmware/go-vcloud-director/v2/govcd"
-	"github.com/vmware/go-vcloud-director/v2/types/v56"
 	"net/url"
 	"strconv"
 	"sync"
+
+	"github.com/f41gh7/vcd-csi/conf"
+	types2 "github.com/f41gh7/vcd-csi/pkg/types"
+	"github.com/sirupsen/logrus"
+	"github.com/vmware/go-vcloud-director/v2/govcd"
+	"github.com/vmware/go-vcloud-director/v2/types/v56"
 )
 
 type VcdClient struct {
@@ -99,17 +101,17 @@ func (v *VcdClient) buildClients() error {
 
 type VolumeWithCap struct {
 	Name string
-	Cap  int64
+	Cap  *types2.StorageSize
 	VdcName string
 }
 
 type VcdService interface {
-	CreateDisk(vdc, diskName, profile string, capacityBytes int64) error
+	CreateDisk(vdc, diskName, profile string, storageSize *types2.StorageSize) error
 	ListVolumes() ([]*VolumeWithCap, error)
 	DeleteDisk(diskName string) error
 	DetachDisk(vmName, diskName string) error
 	AttachDisk(vmName, diskName string) (*DiskAttachParams, error)
-	ResizeDisk(vdcName, diskName string, newDiskSize int64)  error
+	ResizeDisk(vdcName, diskName string, storageSize *types2.StorageSize)  error
 }
 
 func (v *VcdClient) refreshAuth() error {
@@ -156,10 +158,10 @@ func (v *VcdClient) ListVolumes() ([]*VolumeWithCap, error) {
 						v.l.WithError(err).Errorf("error getting disk by href")
 						return nil, err
 					}
-					v.l.Infof("found volume: %v, cap: %v", obj.Name, d.Disk.Size)
+					v.l.Infof("found volume: %v, cap: %v", obj.Name, d.Disk.SizeMb)
 					resp = append(resp, &VolumeWithCap{
 						Name: obj.Name,
-						Cap: d.Disk.Size,
+						Cap:  types2.NewStorageSizeFromMb(d.Disk.SizeMb),
 						VdcName: vdcName})
 				}
 			}
@@ -170,8 +172,8 @@ func (v *VcdClient) ListVolumes() ([]*VolumeWithCap, error) {
 }
 
 //we must validate min size before calling this func
-func (v *VcdClient) CreateDisk(vdcName, diskName, profile string, capacityBytes int64) error {
-	l := v.l.WithFields(logrus.Fields{"vdcName": vdcName, "diskName": diskName, "profile": profile, "size": capacityBytes})
+func (v *VcdClient) CreateDisk(vdcName, diskName, profile string, capacity *types2.StorageSize) error {
+	l := v.l.WithFields(logrus.Fields{"vdcName": vdcName, "diskName": diskName, "profile": profile, "size": capacity.Mb()})
 	l.Infof("creating new disk")
 	v.mt.Lock()
 	defer v.mt.Unlock()
@@ -207,7 +209,7 @@ func (v *VcdClient) CreateDisk(vdcName, diskName, profile string, capacityBytes 
 		}
 		task, err := client.CreateDisk(&types.DiskCreateParams{Disk: &types.Disk{
 			Name:           diskName,
-			Size:           capacityBytes,
+			SizeMb:           capacity.Mb(),
 			StorageProfile: &StorageReference,
 			BusType:        v.c.DefaultBusType,
 			BusSubType:     v.c.DefaultSubBusType,
@@ -329,7 +331,7 @@ func (v *VcdClient) DetachDisk(vm, VolumeName string) error {
 type DiskAttachParams struct {
 	Name string
 	Path string
-	Size string
+	Size *types2.StorageSize
 }
 
 func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
@@ -390,14 +392,14 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 						continue
 					}
 					if diskSpec.Disk.HREF == Disk.Disk.HREF {
-						//we found correct attachemtnet
-						convSize := strconv.FormatInt(Disk.Disk.Size, 10)
-						l.Infof("found disk attached to vm, name: %s, size: %v", diskSpec.Disk.Name, Disk.Disk.Size)
+						//we found correct attachement
+
+						l.Infof("found disk attached to vm, name: %s, size: %v", diskSpec.Disk.Name, Disk.Disk.SizeMb)
 						return &DiskAttachParams{
 							Name: disk,
 							//we need data convertion to string for publish context
 							Path: strconv.Itoa(diskSpec.UnitNumber),
-							Size: convSize,
+							Size: types2.NewStorageSizeFromMb(Disk.Disk.SizeMb),
 						}, nil
 					}
 				}
@@ -437,12 +439,11 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 			l.WithError(err).Errorf("cannot wait for disk attach completion")
 			return nil, err
 		}
-		convSize := strconv.FormatInt(Disk.Disk.Size, 10)
 		l.Infof("disk attached correctly")
 		return &DiskAttachParams{
 					Name: disk,
 					Path: strconv.Itoa(unitNum),
-					Size: convSize,
+					Size: types2.NewStorageSizeFromMb(Disk.Disk.SizeMb),
 				}, nil}
 
 
@@ -451,7 +452,7 @@ func (v *VcdClient) AttachDisk(vm, disk string) (*DiskAttachParams, error) {
 
 }
 
-func (v *VcdClient) ResizeDisk(vdcName, diskName string, newDiskSize int64)  error {
+func (v *VcdClient) ResizeDisk(vdcName, diskName string, newDiskSize *types2.StorageSize)  error {
 	l := v.l.WithFields(logrus.Fields{
 		"disk": diskName,
 		"vdc": vdcName,
@@ -481,7 +482,7 @@ func (v *VcdClient) ResizeDisk(vdcName, diskName string, newDiskSize int64)  err
 			l.WithError(ErrDiskAttachedToVm).Errorf("disk already attached to vm: %v",vm.Name)
 			return ErrDiskAttachedToVm
 		}
-		task, err := disk.Update(&types.Disk{Name:disk.Disk.Name,Size:newDiskSize})
+		task, err := disk.Update(&types.Disk{Name:disk.Disk.Name, SizeMb:newDiskSize.Mb()})
 		if err != nil {
 			l.WithError(err).Error("cannot update disk")
 			return err
@@ -590,11 +591,11 @@ func getDiskByName(client *govcd.Vdc, diskName string, l *logrus.Entry) (*govcd.
 		return nil, err
 	}
 	if len(*disks) != 1 {
-		return nil, errors.New("disk count mismatch, we want excatly one, seems like collision, count: " + string(len(*disks)))
+		return nil, fmt.Errorf("disk count mismatch, we want excatly one, seems like collision, count: %d",len(*disks))
 	}
 	disk := (*disks)[0]
 
-	l.Infof("disk was found, disk: %s, size: %d", disk.Disk.Name, disk.Disk.Size)
+	l.Infof("disk was found, disk: %s, size: %d", disk.Disk.Name, disk.Disk.SizeMb)
 	return &disk, nil
 }
 
@@ -611,7 +612,7 @@ func (v *VcdClient) disksExists(client *govcd.Vdc, diskName string) (bool, error
 	}
 	if len(*d) == 1 {
 		d1 := (*d)[0]
-		l.Infof("exists disk info, name: %s, size: %v", d1.Disk.Name, d1.Disk.Size)
+		l.Infof("exists disk info, name: %s, size: %v", d1.Disk.Name, d1.Disk.SizeMb)
 	}
 	l.Infof("disk exists")
 	return true, nil

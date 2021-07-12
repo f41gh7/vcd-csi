@@ -12,14 +12,10 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v1
 
-      - name: Get release version
-        id: get_version
-        run: echo ::set-env name=VERSION::$(echo ${GITHUB_REF:10})
 
       - name: Build
         run: |
             make build
-            echo "version: $$VERSION"
             zip -r bundle.zip deploy/
 
       - name: build docker

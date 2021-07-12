@@ -17,13 +17,15 @@
 package vcd_client
 
 import (
-	"github.com/f41gh7/vcd-csi/conf"
-	"github.com/sirupsen/logrus"
-	"github.com/vmware/go-vcloud-director/v2/govcd"
-	"github.com/vmware/go-vcloud-director/v2/types/v56"
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/f41gh7/vcd-csi/conf"
+	types2 "github.com/f41gh7/vcd-csi/pkg/types"
+	"github.com/sirupsen/logrus"
+	"github.com/vmware/go-vcloud-director/v2/govcd"
+	"github.com/vmware/go-vcloud-director/v2/types/v56"
 )
 
 var (
@@ -101,7 +103,7 @@ func TestVcdClient_CreateDisk(t *testing.T) {
 		vcd           string
 		name          string
 		profile       string
-		capacityBytes int64
+		capacityBytes *types2.StorageSize
 	}
 	tests := []struct {
 		name    string
@@ -115,7 +117,7 @@ func TestVcdClient_CreateDisk(t *testing.T) {
 				vcd:           testConf.Vdcs[0],
 				name:          "test-pvc-1",
 				profile:       "FAS-Basic",
-				capacityBytes: 19000000,
+				capacityBytes: types2.NewStorageSize( 19000000),
 			},
 			fields: fields{
 				c: testConf,
@@ -336,7 +338,7 @@ func Test_getFreeUnitNum(t *testing.T) {
 		{
 			name: "excract some num",
 			args: args{
-				vm: &govcd.VM{VM: &types.VM{
+				vm: &govcd.VM{VM: &types.Vm{
 					VmSpecSection: &types.VmSpecSection{
 						DiskSection: &types.DiskSection{DiskSettings: []*types.DiskSettings{
 							&types.DiskSettings{UnitNumber: 2, BusNumber: 3},
@@ -355,7 +357,7 @@ func Test_getFreeUnitNum(t *testing.T) {
 		{
 			name: "no free units some num",
 			args: args{
-				vm: &govcd.VM{VM: &types.VM{
+				vm: &govcd.VM{VM: &types.Vm{
 					VmSpecSection: &types.VmSpecSection{
 						DiskSection: &types.DiskSection{DiskSettings: []*types.DiskSettings{
 							&types.DiskSettings{UnitNumber: 0, BusNumber: 0},
@@ -416,7 +418,7 @@ func TestVcdClient_ResizeDisk(t *testing.T) {
 	type args struct {
 		vdcName     string
 		diskName    string
-		newDiskSize int64
+		newDiskSize *types2.StorageSize
 	}
 	tests := []struct {
 		name    string
@@ -429,7 +431,7 @@ func TestVcdClient_ResizeDisk(t *testing.T) {
 			args:args{
 				vdcName:     "",
 				diskName:    "tp3",
-				newDiskSize: 17000928256,
+				newDiskSize: types2.NewStorageSize(17000928256),
 			},
 			fields:fields{
 				c:          testConf,

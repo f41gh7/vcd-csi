@@ -9,7 +9,7 @@ require (
 	github.com/jaypipes/ghw v0.6.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/sirupsen/logrus v1.5.0
-	github.com/vmware/go-vcloud-director/v2 v2.7.0
+	github.com/vmware/go-vcloud-director/v2 v2.12.1
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 	golang.org/x/sys v0.0.0-20191022100944-742c48ecaeb7
 	google.golang.org/grpc v1.29.1

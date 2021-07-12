@@ -23,7 +23,7 @@ type StorageSize struct {
 
 func NewStorageSizeFromMb(mb int64)*StorageSize{
 	return &StorageSize{
-		b: mb/1024/1024,
+		b: mb*1024*1024,
 	}
 }
 // NewStorageSize - creates storage size from given bytes.

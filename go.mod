@@ -11,7 +11,7 @@ require (
 	github.com/sirupsen/logrus v1.5.0
 	github.com/vmware/go-vcloud-director/v2 v2.12.1
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
-	golang.org/x/sys v0.0.0-20191022100944-742c48ecaeb7
+	golang.org/x/sys v0.1.0
 	google.golang.org/grpc v1.29.1
 	k8s.io/apimachinery v0.18.2
 )
